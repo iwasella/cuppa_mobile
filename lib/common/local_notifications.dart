@@ -18,6 +18,7 @@ import 'package:cuppa_mobile/common/globals.dart';
 import 'package:cuppa_mobile/common/icons.dart';
 import 'package:cuppa_mobile/common/toast.dart';
 import 'package:cuppa_mobile/data/localization.dart';
+import 'package:cuppa_mobile/data/prefs.dart';
 
 import 'dart:async' show Completer;
 import 'dart:io' show Platform;
@@ -61,6 +62,9 @@ final Int64List notifyVibratePattern = .fromList(
 
 // Request notification permissions
 Completer<void>? _permissionsCompleter;
+const String _notificationPermissionRequestedKey =
+    'notificationPermissionRequested';
+
 Future<void> requestNotifyPermissions() async {
   if (_permissionsCompleter != null) {
     return _permissionsCompleter!.future;
@@ -74,11 +78,24 @@ Future<void> requestNotifyPermissions() async {
           >()
           ?.requestPermissions(alert: true, badge: true, sound: true);
     } else {
-      await notify
+      final AndroidFlutterLocalNotificationsPlugin? android = notify
           .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin
-          >()
-          ?.requestNotificationsPermission();
+          >();
+      final bool? enabled = await android?.areNotificationsEnabled();
+      final bool alreadyRequested =
+          Prefs.sharedPrefs.getBool(_notificationPermissionRequestedKey) ??
+          false;
+
+      // Android can show the runtime permission prompt again after a denial.
+      // Ask once, then let the notification settings link handle later changes.
+      if (enabled != true && !alreadyRequested) {
+        await Prefs.sharedPrefs.setBool(
+          _notificationPermissionRequestedKey,
+          true,
+        );
+        await android?.requestNotificationsPermission();
+      }
     }
     _permissionsCompleter!.complete();
   } catch (e) {
